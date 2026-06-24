@@ -1,0 +1,9 @@
+.env
+*.env
+webapp/node_modules/
+webapp/.wrangler/
+delete_log.txt
+__pycache__/
+*.pyc
+.oauth_state.json
+.deleted_ids.json

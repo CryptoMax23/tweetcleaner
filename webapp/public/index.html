@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TweetCleaner — Delete your tweets with advanced filters</title>
+  <meta name="description" content="Delete all your old tweets in bulk. Filter by keyword, likes, retweets, date. Fast and easy.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0a0a0f; }
+    .card { background: #111827; border: 1px solid #1f2937; }
+    .input { background: #1f2937; border: 1px solid #374151; color: white; }
+    .input:focus { border-color: #3b82f6; outline: none; }
+    .btn-primary { background: #2563eb; } .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger  { background: #dc2626; } .btn-danger:hover  { background: #b91c1c; }
+    .tweet-row:hover { background: rgba(255,255,255,0.03); }
+    .step-number { background:#1e3a5f; color:#60a5fa; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+    .step-number.done { background:#14532d; color:#4ade80; }
+    #drop-zone { transition: border-color .2s, background .2s; }
+    #drop-zone.drag-over { border-color:#3b82f6; background:rgba(59,130,246,.05); }
+    #drop-zone.loaded { border-color:#22c55e; }
+    .locked { position:relative; opacity:.5; pointer-events:none; }
+    .lock-badge { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; cursor:pointer; pointer-events:all; opacity:1; }
+    .lang-btn { padding:4px 10px; border-radius:8px; font-size:13px; font-weight:600; transition:all .2s; }
+    .lang-btn.active { background:#2563eb; color:white; }
+    .lang-btn:not(.active) { color:#6b7280; }
+    .lang-btn:not(.active):hover { color:white; }
+    ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:#111} ::-webkit-scrollbar-thumb{background:#374151;border-radius:3px}
+  </style>
+</head>
+<body class="text-gray-100 min-h-screen">
+
+<!-- Upgrade Modal -->
+<div id="modal-upgrade" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="card rounded-2xl p-8 max-w-md w-full mx-4 text-center">
+    <div class="text-5xl mb-4">🔒</div>
+    <h3 class="text-xl font-bold mb-2" id="modal-title"></h3>
+    <p class="text-gray-400 mb-6" id="modal-desc"></p>
+    <div class="flex gap-3 justify-center">
+      <button onclick="closeModal()" class="px-5 py-2 rounded-xl border border-gray-600 text-gray-400 hover:text-white transition" data-i18n="cancel"></button>
+      <button onclick="scrollToPricing()" class="btn-primary px-5 py-2 rounded-xl text-white font-semibold transition" data-i18n="seePlans"></button>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-4xl mx-auto px-4 py-10">
+
+  <!-- Header -->
+  <div class="text-center mb-10 relative">
+    <!-- Lang switcher -->
+    <div class="absolute right-0 top-0 flex gap-1 bg-gray-900 rounded-xl p-1">
+      <button class="lang-btn active" onclick="setLang('fr')">🇫🇷 FR</button>
+      <button class="lang-btn" onclick="setLang('en')">🇬🇧 EN</button>
+    </div>
+    <h1 class="text-4xl font-bold text-white mb-2">🧹 TweetCleaner</h1>
+    <p class="text-gray-400" data-i18n="subtitle"></p>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="card rounded-2xl p-6 mb-5">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="step-number" id="step1-num">1</div>
+      <h2 class="text-lg font-semibold" data-i18n="step1Title"></h2>
+    </div>
+    <div id="auth-disconnected" class="flex flex-col gap-3">
+      <button onclick="connectDirect()" class="inline-flex items-center gap-2 font-semibold px-6 py-3 rounded-xl text-white transition w-fit" style="background:#1d9bf0">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.389 6.231H2.76l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        <span data-i18n="connectBtn"></span>
+      </button>
+      <button onclick="window.location.href='/auth/start'" class="inline-flex items-center gap-2 font-semibold px-6 py-3 rounded-xl text-white transition w-fit" style="background:#374151">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.389 6.231H2.76l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        <span>Connexion OAuth (autre compte)</span>
+      </button>
+    </div>
+    <div id="auth-connected" class="hidden items-center gap-3 flex-wrap">
+      <span class="text-2xl">✅</span>
+      <span class="font-semibold text-green-400" id="auth-username"></span>
+      <span id="plan-badge" class="text-xs font-bold px-2 py-1 rounded-full hidden"></span>
+      <span id="usage-label" class="text-xs text-gray-500 hidden"></span>
+      <button onclick="disconnect()" class="ml-auto text-sm text-gray-500 hover:text-red-400 transition" data-i18n="disconnect"></button>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="card rounded-2xl p-6 mb-5">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="step-number" id="step2-num">2</div>
+      <h2 class="text-lg font-semibold" data-i18n="step2Title"></h2>
+    </div>
+    <p class="text-gray-400 text-sm mb-4" data-i18n="step2Desc"></p>
+    <div id="drop-zone" class="border-2 border-dashed border-gray-700 rounded-xl p-10 text-center cursor-pointer"
+      onclick="document.getElementById('file-input').click()"
+      ondragover="onDragOver(event)" ondragleave="onDragLeave()" ondrop="onDrop(event)">
+      <div class="text-4xl mb-3" id="drop-icon">📁</div>
+      <p class="text-gray-300 font-medium" data-i18n="dropZone"></p>
+      <p id="file-status" class="text-sm text-gray-500 mt-2"></p>
+    </div>
+    <input id="file-input" type="file" accept=".js,.json" class="hidden" onchange="loadFile(this.files[0])">
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="card rounded-2xl p-6 mb-5">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="step-number" id="step3-num">3</div>
+      <h2 class="text-lg font-semibold" data-i18n="step3Title"></h2>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+      <div class="md:col-span-2 text-xs text-gray-500 font-semibold uppercase tracking-wider" data-i18n="freeFilters"></div>
+
+      <div id="wrap-before" class="relative">
+        <label class="block text-sm text-gray-400 mb-1.5"><span data-i18n="filterDate"></span> <span class="text-blue-400 text-xs">Pro+</span></label>
+        <input id="f-before" type="date" class="input w-full rounded-lg px-4 py-2.5">
+        <div id="lock-before" class="lock-badge hidden" onclick="showModal('pro', t('filterDate'), t('lockProDesc'))">🔒</div>
+      </div>
+
+      <div id="wrap-type" class="relative">
+        <label class="block text-sm text-gray-400 mb-2"><span data-i18n="filterType"></span> <span class="text-blue-400 text-xs">Pro+</span></label>
+        <div class="flex flex-wrap gap-4">
+          <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="f-original" checked class="w-4 h-4 accent-blue-500"><span class="text-sm" data-i18n="typeOriginal"></span></label>
+          <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="f-replies"  checked class="w-4 h-4 accent-blue-500"><span class="text-sm" data-i18n="typeReplies"></span></label>
+          <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="f-retweets" checked class="w-4 h-4 accent-blue-500"><span class="text-sm" data-i18n="typeRetweets"></span></label>
+        </div>
+        <div id="lock-type" class="lock-badge hidden" onclick="showModal('pro', t('filterType'), t('lockProDesc'))">🔒</div>
+      </div>
+
+      <div class="md:col-span-2 text-xs text-gray-500 font-semibold uppercase tracking-wider mt-2" data-i18n="premiumFilters"></div>
+
+      <div id="wrap-keyword" class="relative">
+        <label class="block text-sm text-gray-400 mb-1.5"><span data-i18n="filterKeyword"></span> <span class="text-purple-400 text-xs">Premium</span></label>
+        <input id="f-keyword" type="text" class="input w-full rounded-lg px-4 py-2.5" data-i18n-placeholder="filterKeywordPlaceholder">
+        <div id="lock-keyword" class="lock-badge hidden" onclick="showModal('premium', t('filterKeyword'), t('lockPremiumDesc'))">🔒</div>
+      </div>
+
+      <div class="relative">
+        <label class="block text-sm text-gray-400 mb-1.5"><span data-i18n="filterLikes"></span> <span class="text-purple-400 text-xs">Premium</span></label>
+        <input id="f-likes" type="number" min="0" class="input w-full rounded-lg px-4 py-2.5" data-i18n-placeholder="filterLikesPlaceholder">
+        <div id="lock-likes" class="lock-badge hidden" onclick="showModal('premium', t('filterLikes'), t('lockPremiumDesc'))">🔒</div>
+      </div>
+
+      <div class="relative">
+        <label class="block text-sm text-gray-400 mb-1.5"><span data-i18n="filterRTs"></span> <span class="text-purple-400 text-xs">Premium</span></label>
+        <input id="f-rts" type="number" min="0" class="input w-full rounded-lg px-4 py-2.5" data-i18n-placeholder="filterRTsPlaceholder">
+        <div id="lock-rts" class="lock-badge hidden" onclick="showModal('premium', t('filterRTs'), t('lockPremiumDesc'))">🔒</div>
+      </div>
+    </div>
+    <button onclick="applyFilters()" class="btn-primary text-white font-semibold px-6 py-2.5 rounded-xl transition" data-i18n="previewBtn"></button>
+  </div>
+
+  <!-- STEP 4 -->
+  <div id="step-preview" class="card rounded-2xl p-6 mb-5 hidden">
+    <div class="flex items-center gap-3 mb-5 flex-wrap">
+      <div class="step-number" id="step4-num">4</div>
+      <h2 class="text-lg font-semibold"><span data-i18n="step4Title"></span> — <span id="preview-count" class="text-blue-400">0</span> <span data-i18n="tweets"></span></h2>
+      <button id="btn-delete" onclick="startDelete()" class="btn-danger ml-auto text-white font-semibold px-5 py-2 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed" disabled data-i18n="deleteBtn"></button>
+    </div>
+    <div id="delete-progress" class="hidden mb-5 bg-gray-800 rounded-xl p-4">
+      <div class="flex justify-between text-sm text-gray-400 mb-2">
+        <span id="progress-label" data-i18n="deleting"></span>
+        <span id="progress-text">0 / 0</span>
+      </div>
+      <div class="bg-gray-700 rounded-full h-2.5">
+        <div id="progress-bar" class="h-2.5 rounded-full transition-all" style="width:0%;background:#ef4444"></div>
+      </div>
+    </div>
+    <div class="overflow-x-auto rounded-xl border border-gray-800">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-gray-400 border-b border-gray-800 bg-gray-900/50">
+            <th class="px-4 py-3" data-i18n="colTweet"></th>
+            <th class="px-4 py-3 text-right" data-i18n="colLikes"></th>
+            <th class="px-4 py-3 text-right">RTs</th>
+            <th class="px-4 py-3 text-right" data-i18n="colDate"></th>
+          </tr>
+        </thead>
+        <tbody id="preview-table"></tbody>
+      </table>
+    </div>
+    <p id="preview-more" class="text-center text-gray-500 text-sm mt-3 hidden"></p>
+  </div>
+
+  <!-- PRICING -->
+  <div id="pricing" class="mt-16 mb-10">
+    <div class="text-center mb-10">
+      <h2 class="text-3xl font-bold text-white mb-3" data-i18n="pricingTitle"></h2>
+      <p class="text-gray-400" data-i18n="pricingSubtitle"></p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- FREE -->
+      <div class="card rounded-2xl p-6 flex flex-col" style="background:#1f2937;border-color:#374151">
+        <div class="mb-6">
+          <p class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2" data-i18n="planFree"></p>
+          <div class="flex items-end gap-1 mb-1"><span class="text-4xl font-bold text-white">0€</span><span class="text-gray-400 mb-1" data-i18n="perMonth"></span></div>
+          <p class="text-gray-500 text-sm" data-i18n="planFreeDesc"></p>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1">
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f1Free"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f2Free"></span></li>
+          <li class="flex items-start gap-2 text-sm text-gray-500"><span class="mt-0.5">✗</span><span data-i18n="f3Free"></span></li>
+          <li class="flex items-start gap-2 text-sm text-gray-500"><span class="mt-0.5">✗</span><span data-i18n="f4Free"></span></li>
+          <li class="flex items-start gap-2 text-sm text-gray-500"><span class="mt-0.5">✗</span><span data-i18n="f5Free"></span></li>
+        </ul>
+        <button class="w-full py-2.5 rounded-xl border border-gray-600 text-gray-400 font-semibold cursor-default" data-i18n="currentPlan"></button>
+      </div>
+
+      <!-- PRO -->
+      <div class="card rounded-2xl p-6 flex flex-col" style="background:#1e3a5f;border-color:#3b82f6">
+        <div class="mb-6">
+          <p class="text-sm font-semibold text-blue-400 uppercase tracking-wider mb-2">Pro</p>
+          <div class="flex items-end gap-1 mb-1"><span class="text-4xl font-bold text-white">4,99€</span><span class="text-gray-400 mb-1" data-i18n="perMonth"></span></div>
+          <p class="text-gray-500 text-sm" data-i18n="planProDesc"></p>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1">
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f1Pro"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f2Pro"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f3Pro"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f4Pro"></span></li>
+          <li class="flex items-start gap-2 text-sm text-gray-500"><span class="mt-0.5">✗</span><span data-i18n="f5Pro"></span></li>
+          <li class="flex items-start gap-2 text-sm text-gray-500"><span class="mt-0.5">✗</span><span data-i18n="f6Pro"></span></li>
+        </ul>
+        <button onclick="subscribe('pro')" class="w-full py-2.5 rounded-xl font-semibold text-white transition" style="background:#2563eb" onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'" data-i18n="subscribeBtn"></button>
+      </div>
+
+      <!-- PREMIUM -->
+      <div class="card rounded-2xl p-6 flex flex-col" style="border-color:#7c3aed;background:linear-gradient(135deg,#1a0a3e,#111827)">
+        <div class="mb-6">
+          <div class="flex items-center gap-2 mb-2">
+            <p class="text-sm font-semibold text-purple-400 uppercase tracking-wider">Premium</p>
+            <span class="text-xs bg-purple-600 text-white px-2 py-0.5 rounded-full" data-i18n="popular"></span>
+          </div>
+          <div class="flex items-end gap-1 mb-1"><span class="text-4xl font-bold text-white">9,99€</span><span class="text-gray-400 mb-1" data-i18n="perMonth"></span></div>
+          <p class="text-gray-500 text-sm" data-i18n="planPremiumDesc"></p>
+        </div>
+        <ul class="space-y-3 mb-8 flex-1">
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f1Premium"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f2Premium"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f3Premium"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f4Premium"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f5Premium"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f6Premium"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f7Premium"></span></li>
+          <li class="flex items-start gap-2 text-sm"><span class="text-green-400 mt-0.5">✓</span><span data-i18n="f8Premium"></span></li>
+        </ul>
+        <button onclick="subscribe('premium')" class="w-full py-2.5 rounded-xl font-semibold text-white transition" style="background:#7c3aed" onmouseover="this.style.background='#6d28d9'" onmouseout="this.style.background='#7c3aed'" data-i18n="subscribeBtn"></button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Translations ──────────────────────────────────────────────────────────────
+const TRANSLATIONS = {
+  fr: {
+    subtitle: 'Supprimez vos tweets avec des filtres avancés',
+    step1Title: 'Connecter votre compte Twitter / X',
+    connectBtn: 'Connecter @jordandebelfort',
+    disconnect: 'Déconnecter',
+    step2Title: 'Charger votre archive Twitter',
+    step2Desc: 'Téléchargez votre archive : Paramètres → Votre compte → Télécharger une archive. Puis déposez le fichier data/tweets.js ci-dessous.',
+    dropZone: 'Glissez tweets.js ici ou cliquez pour choisir',
+    step3Title: 'Configurer les filtres',
+    freeFilters: 'Filtres disponibles sur tous les plans',
+    premiumFilters: 'Filtres avancés — Premium uniquement',
+    filterDate: 'Avant la date',
+    filterType: 'Type de tweet',
+    filterKeyword: 'Contient le mot-clé',
+    filterKeywordPlaceholder: 'Ex: manger',
+    filterLikes: 'Moins de X likes',
+    filterLikesPlaceholder: 'Ex: 1000',
+    filterRTs: 'Moins de X retweets',
+    filterRTsPlaceholder: 'Ex: 500',
+    typeOriginal: 'Originaux',
+    typeReplies: 'Réponses',
+    typeRetweets: 'Retweets',
+    previewBtn: 'Voir l\'aperçu →',
+    step4Title: 'Aperçu',
+    tweets: 'tweets',
+    deleteBtn: 'Supprimer tout',
+    deleting: 'Suppression en cours...',
+    colTweet: 'Tweet',
+    colLikes: 'Likes',
+    colDate: 'Date',
+    cancel: 'Annuler',
+    seePlans: 'Voir les plans →',
+    lockProDesc: 'Disponible à partir du plan Pro (4,99€/mois).',
+    lockPremiumDesc: 'Disponible avec le plan Premium (9,99€/mois).',
+    pricingTitle: 'Choisissez votre plan',
+    pricingSubtitle: 'Commencez gratuitement, évoluez selon vos besoins',
+    planFree: 'Gratuit',
+    planProDesc: 'Suppressions illimitées',
+    planPremiumDesc: 'Tous les filtres débloqués',
+    perMonth: '/mois',
+    planFreeDesc: 'Pour essayer',
+    popular: 'Populaire',
+    currentPlan: 'Plan actuel',
+    subscribeBtn: 'S\'abonner →',
+    f1Free: '50 suppressions / mois',
+    f2Free: 'Archive Twitter',
+    f3Free: 'Filtres par date / type',
+    f4Free: 'Filtres mots-clés / likes / RT',
+    f5Free: 'Suppression programmée',
+    f1Pro: 'Suppressions illimitées',
+    f2Pro: 'Archive Twitter',
+    f3Pro: 'Filtre par date',
+    f4Pro: 'Filtre par type (RT, réponses...)',
+    f5Pro: 'Filtres mots-clés / likes / RT',
+    f6Pro: 'Suppression programmée',
+    f1Premium: 'Suppressions illimitées',
+    f2Premium: 'Archive Twitter',
+    f3Premium: 'Filtre par date',
+    f4Premium: 'Filtre par type (RT, réponses...)',
+    f5Premium: 'Filtre par mots-clés',
+    f6Premium: 'Filtre par nombre de likes',
+    f7Premium: 'Filtre par nombre de RT',
+    f8Premium: 'Suppression programmée',
+    usageLeft: 'suppressions restantes ce mois',
+    confirmDelete: (n) => `Supprimer ${n} tweets ?\n\nCette action est irréversible.`,
+    tweetsLoaded: (n) => `${n} tweets chargés ✓`,
+    invalidFile: 'Fichier invalide — vérifiez que c\'est bien tweets.js',
+    limitReached: 'Limite mensuelle atteinte (50 tweets). Passez en Pro pour continuer.',
+    rateLimited: '⏳ Pause 15 min (limite Twitter)...',
+    done: '✅ Terminé !',
+    deleted: (n) => `${n} supprimés`,
+    moretweets: (n) => `… et ${n} autres tweets`,
+    loadArchiveFirst: 'Chargez d\'abord votre archive tweets.js (étape 2)',
+    connectFirst: 'Connectez-vous d\'abord (étape 1)',
+    paymentError: 'Erreur lors de la redirection vers le paiement.',
+    connectError: 'Erreur de connexion.',
+  },
+  en: {
+    subtitle: 'Delete your tweets with advanced filters',
+    step1Title: 'Connect your Twitter / X account',
+    connectBtn: 'Connect @jordandebelfort',
+    disconnect: 'Disconnect',
+    step2Title: 'Upload your Twitter archive',
+    step2Desc: 'Download your archive: Settings → Your account → Download an archive of your data. Then drop the file data/tweets.js below.',
+    dropZone: 'Drop tweets.js here or click to choose',
+    step3Title: 'Configure filters',
+    freeFilters: 'Filters available on all plans',
+    premiumFilters: 'Advanced filters — Premium only',
+    filterDate: 'Before date',
+    filterType: 'Tweet type',
+    filterKeyword: 'Contains keyword',
+    filterKeywordPlaceholder: 'e.g. food',
+    filterLikes: 'Less than X likes',
+    filterLikesPlaceholder: 'e.g. 1000',
+    filterRTs: 'Less than X retweets',
+    filterRTsPlaceholder: 'e.g. 500',
+    typeOriginal: 'Original',
+    typeReplies: 'Replies',
+    typeRetweets: 'Retweets',
+    previewBtn: 'Preview →',
+    step4Title: 'Preview',
+    tweets: 'tweets',
+    deleteBtn: 'Delete all',
+    deleting: 'Deleting...',
+    colTweet: 'Tweet',
+    colLikes: 'Likes',
+    colDate: 'Date',
+    cancel: 'Cancel',
+    seePlans: 'See plans →',
+    lockProDesc: 'Available from the Pro plan (€4.99/month).',
+    lockPremiumDesc: 'Available with the Premium plan (€9.99/month).',
+    pricingTitle: 'Choose your plan',
+    pricingSubtitle: 'Start for free, scale as you grow',
+    planFree: 'Free',
+    planProDesc: 'Unlimited deletions',
+    planPremiumDesc: 'All filters unlocked',
+    perMonth: '/month',
+    planFreeDesc: 'To get started',
+    popular: 'Popular',
+    currentPlan: 'Current plan',
+    subscribeBtn: 'Subscribe →',
+    f1Free: '50 deletions / month',
+    f2Free: 'Twitter archive',
+    f3Free: 'Date / type filters',
+    f4Free: 'Keyword / likes / RT filters',
+    f5Free: 'Scheduled deletion',
+    f1Pro: 'Unlimited deletions',
+    f2Pro: 'Twitter archive',
+    f3Pro: 'Filter by date',
+    f4Pro: 'Filter by type (RTs, replies...)',
+    f5Pro: 'Keyword / likes / RT filters',
+    f6Pro: 'Scheduled deletion',
+    f1Premium: 'Unlimited deletions',
+    f2Premium: 'Twitter archive',
+    f3Premium: 'Filter by date',
+    f4Premium: 'Filter by type (RTs, replies...)',
+    f5Premium: 'Filter by keyword',
+    f6Premium: 'Filter by likes count',
+    f7Premium: 'Filter by retweet count',
+    f8Premium: 'Scheduled deletion',
+    usageLeft: 'deletions left this month',
+    confirmDelete: (n) => `Delete ${n} tweets?\n\nThis action is irreversible.`,
+    tweetsLoaded: (n) => `${n} tweets loaded ✓`,
+    invalidFile: 'Invalid file — make sure it\'s tweets.js',
+    limitReached: 'Monthly limit reached (50 tweets). Upgrade to Pro to continue.',
+    rateLimited: '⏳ Pausing 15 min (Twitter rate limit)...',
+    done: '✅ Done!',
+    deleted: (n) => `${n} deleted`,
+    moretweets: (n) => `… and ${n} more tweets`,
+    loadArchiveFirst: 'Please load your tweets.js archive first (step 2)',
+    connectFirst: 'Please connect your account first (step 1)',
+    paymentError: 'Error redirecting to payment.',
+    connectError: 'Connection error.',
+  }
+};
+
+let lang = localStorage.getItem('tc_lang') || (navigator.language.startsWith('fr') ? 'fr' : 'en');
+let allTweets = [], filteredTweets = [], sessionId = null;
+let userPlan = 'free', usageThisMonth = 0;
+const LIMITS = { free: 50 };
+const PLAN_LABELS = {
+  free:    { fr: 'Gratuit',  en: 'Free',    cls: 'bg-gray-700 text-gray-300' },
+  pro:     { fr: 'Pro',      en: 'Pro',      cls: 'bg-blue-900 text-blue-300' },
+  premium: { fr: 'Premium',  en: 'Premium',  cls: 'bg-purple-900 text-purple-300' },
+};
+
+function t(key, ...args) {
+  const val = TRANSLATIONS[lang][key];
+  return typeof val === 'function' ? val(...args) : (val || key);
+}
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('tc_lang', l);
+  document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.toggle('active', btn.textContent.includes(l.toUpperCase())));
+  document.documentElement.lang = l;
+  applyTranslations();
+  if (userPlan !== 'free') applyPlanUI();
+}
+
+function applyTranslations() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  if (userPlan !== 'free') {
+    const usage = document.getElementById('usage-label');
+    if (!usage.classList.contains('hidden')) usage.textContent = `${Math.max(0, LIMITS.free - usageThisMonth)} ${t('usageLeft')}`;
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  applyTranslations();
+  connectDirect();
+});
+
+async function connectDirect() {
+  try {
+    const res = await fetch('/auth/direct');
+    if (res.ok) { const { session, username } = await res.json(); sessionId = session; localStorage.setItem('tc_session', session); showConnected(username); loadPlan(); }
+  } catch(e) {}
+}
+
+async function verifySession(sid) {
+  try {
+    const res = await fetch('/api/me?session=' + sid);
+    if (res.ok) { const { username } = await res.json(); showConnected(username); loadPlan(); }
+    else { localStorage.removeItem('tc_session'); sessionId = null; }
+  } catch(e) {}
+}
+
+async function loadPlan() {
+  try {
+    const res = await fetch('/api/plan?session=' + sessionId);
+    if (res.ok) { const d = await res.json(); userPlan = d.plan || 'free'; usageThisMonth = d.usage || 0; applyPlanUI(); }
+  } catch(e) {}
+}
+
+function showConnected(username) {
+  document.getElementById('auth-disconnected').classList.add('hidden');
+  const el = document.getElementById('auth-connected'); el.classList.remove('hidden'); el.classList.add('flex');
+  document.getElementById('auth-username').textContent = '@' + username;
+  document.getElementById('step1-num').classList.add('done');
+  refreshDeleteButton();
+}
+
+function applyPlanUI() {
+  const lbl = PLAN_LABELS[userPlan];
+  const badge = document.getElementById('plan-badge');
+  badge.textContent = lbl[lang]; badge.className = `text-xs font-bold px-2 py-1 rounded-full ${lbl.cls}`; badge.classList.remove('hidden');
+  if (userPlan === 'free') {
+    const rem = Math.max(0, LIMITS.free - usageThisMonth);
+    const u = document.getElementById('usage-label'); u.textContent = `${rem} ${t('usageLeft')}`; u.classList.remove('hidden');
+    ['lock-before','lock-type'].forEach(id => document.getElementById(id).classList.remove('hidden'));
+    ['wrap-before','wrap-type'].forEach(id => document.getElementById(id).classList.add('locked'));
+    ['lock-keyword','lock-likes','lock-rts'].forEach(id => document.getElementById(id).classList.remove('hidden'));
+    ['wrap-keyword'].forEach(id => document.getElementById(id).classList.add('locked'));
+    document.querySelectorAll('#lock-likes,#lock-rts').forEach(el => el.classList.remove('hidden'));
+  } else if (userPlan === 'pro') {
+    ['lock-keyword','lock-likes','lock-rts'].forEach(id => document.getElementById(id).classList.remove('hidden'));
+    document.getElementById('wrap-keyword').classList.add('locked');
+  }
+}
+
+function disconnect() {
+  localStorage.removeItem('tc_session'); sessionId = null; userPlan = 'free';
+  document.getElementById('auth-disconnected').classList.remove('hidden');
+  const el = document.getElementById('auth-connected'); el.classList.add('hidden'); el.classList.remove('flex');
+  document.getElementById('step1-num').classList.remove('done');
+  refreshDeleteButton();
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function showModal(plan, title, desc) { document.getElementById('modal-title').textContent = title; document.getElementById('modal-desc').textContent = desc; document.getElementById('modal-upgrade').classList.remove('hidden'); }
+function closeModal() { document.getElementById('modal-upgrade').classList.add('hidden'); }
+function scrollToPricing() { closeModal(); document.getElementById('pricing').scrollIntoView({ behavior: 'smooth' }); }
+
+// ── Stripe ────────────────────────────────────────────────────────────────────
+async function subscribe(plan) {
+  if (!sessionId) { alert(t('connectFirst')); return; }
+  try {
+    const res = await fetch('/api/checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ session: sessionId, plan }) });
+    const { url, error } = await res.json();
+    if (error) { alert('Erreur : ' + error); return; }
+    window.location.href = url;
+  } catch(e) { alert(t('paymentError')); }
+}
+
+// ── File upload ───────────────────────────────────────────────────────────────
+function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
+function onDragLeave()  { document.getElementById('drop-zone').classList.remove('drag-over'); }
+function onDrop(e)      { e.preventDefault(); onDragLeave(); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); }
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      let raw = e.target.result.replace(/^window\.YTD\.tweets\.part\d+\s*=\s*/, '');
+      allTweets = JSON.parse(raw).map(item => item.tweet || item);
+      document.getElementById('file-status').textContent = t('tweetsLoaded', allTweets.length.toLocaleString());
+      document.getElementById('drop-zone').classList.add('loaded');
+      document.getElementById('drop-icon').textContent = '✅';
+      document.getElementById('step2-num').classList.add('done');
+    } catch(e) { document.getElementById('file-status').textContent = t('invalidFile'); }
+  };
+  reader.readAsText(file);
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function applyFilters() {
+  if (!allTweets.length) { alert(t('loadArchiveFirst')); return; }
+  const keyword    = (userPlan === 'premium') ? document.getElementById('f-keyword').value.toLowerCase().trim() : '';
+  const maxLikes   = (userPlan === 'premium' && document.getElementById('f-likes').value !== '') ? parseInt(document.getElementById('f-likes').value) : Infinity;
+  const maxRts     = (userPlan === 'premium' && document.getElementById('f-rts').value !== '')   ? parseInt(document.getElementById('f-rts').value)   : Infinity;
+  const beforeDate = (userPlan !== 'free' && document.getElementById('f-before').value) ? new Date(document.getElementById('f-before').value) : null;
+  const wantOrig   = (userPlan !== 'free') ? document.getElementById('f-original').checked : true;
+  const wantReply  = (userPlan !== 'free') ? document.getElementById('f-replies').checked  : true;
+  const wantRt     = (userPlan !== 'free') ? document.getElementById('f-retweets').checked : true;
+  filteredTweets = allTweets.filter(tw => {
+    const text  = (tw.full_text || tw.text || '').toLowerCase();
+    const likes = parseInt(tw.favorite_count || 0);
+    const rts   = parseInt(tw.retweet_count  || 0);
+    const date  = new Date(tw.created_at);
+    const isRt    = text.startsWith('rt @');
+    const isReply = !!tw.in_reply_to_status_id_str || !!tw.in_reply_to_status_id;
+    if (isRt    && !wantRt)             return false;
+    if (isReply && !isRt && !wantReply) return false;
+    if (!isRt   && !isReply && !wantOrig) return false;
+    if (keyword && !text.includes(keyword)) return false;
+    if (likes >= maxLikes) return false;
+    if (rts   >= maxRts)   return false;
+    if (beforeDate && date >= beforeDate) return false;
+    return true;
+  });
+  renderPreview();
+  document.getElementById('step3-num').classList.add('done');
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────────
+function renderPreview() {
+  document.getElementById('step-preview').classList.remove('hidden');
+  document.getElementById('preview-count').textContent = filteredTweets.length.toLocaleString();
+  refreshDeleteButton();
+  const LIMIT = 200;
+  document.getElementById('preview-table').innerHTML = filteredTweets.slice(0, LIMIT).map(tw => {
+    const text  = (tw.full_text || tw.text || '').replace(/</g, '&lt;');
+    const likes = parseInt(tw.favorite_count || 0).toLocaleString();
+    const rts   = parseInt(tw.retweet_count  || 0).toLocaleString();
+    const date  = new Date(tw.created_at).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-GB');
+    return `<tr class="tweet-row border-b border-gray-800/60"><td class="px-4 py-3 max-w-xs text-gray-200">${text.slice(0,100)}${text.length>100?'…':''}</td><td class="px-4 py-3 text-right text-pink-400">${likes}</td><td class="px-4 py-3 text-right text-green-400">${rts}</td><td class="px-4 py-3 text-right text-gray-400 whitespace-nowrap">${date}</td></tr>`;
+  }).join('');
+  const more = document.getElementById('preview-more');
+  if (filteredTweets.length > LIMIT) { more.textContent = t('moretweets', (filteredTweets.length - LIMIT).toLocaleString()); more.classList.remove('hidden'); }
+  else more.classList.add('hidden');
+  document.getElementById('step-preview').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function refreshDeleteButton() {
+  const btn = document.getElementById('btn-delete'); if (!btn) return;
+  const overLimit = userPlan === 'free' && usageThisMonth >= LIMITS.free;
+  btn.disabled = !sessionId || filteredTweets.length === 0 || overLimit;
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function startDelete() {
+  if (!sessionId) { alert(t('connectFirst')); return; }
+  if (!confirm(t('confirmDelete', filteredTweets.length.toLocaleString()))) return;
+  document.getElementById('btn-delete').disabled = true;
+  document.getElementById('delete-progress').classList.remove('hidden');
+  const ids = filteredTweets.map(tw => tw.id || tw.id_str);
+  const total = ids.length; const BATCH = 15; let deleted = 0;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    try {
+      const res  = await fetch('/api/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ session: sessionId, ids: ids.slice(i, i+BATCH) }) });
+      const data = await res.json();
+      if (data.limitReached) { alert(t('limitReached')); break; }
+      deleted += data.deleted || 0; usageThisMonth += data.deleted || 0;
+      if (data.rateLimited) { document.getElementById('progress-label').textContent = t('rateLimited'); await new Promise(r => setTimeout(r, 15*60*1000)); document.getElementById('progress-label').textContent = t('deleting'); i -= BATCH; continue; }
+    } catch(e) { continue; }
+    document.getElementById('progress-bar').style.width = Math.min(Math.round((deleted/total)*100),100) + '%';
+    document.getElementById('progress-text').textContent = `${deleted.toLocaleString()} / ${total.toLocaleString()}`;
+  }
+  document.getElementById('progress-label').textContent = t('done');
+  document.getElementById('progress-bar').style.background = '#22c55e';
+  document.getElementById('progress-text').textContent = t('deleted', deleted.toLocaleString());
+  const done = new Set(ids.slice(0, deleted));
+  filteredTweets = filteredTweets.filter(tw => !done.has(tw.id||tw.id_str));
+  allTweets = allTweets.filter(tw => !done.has(tw.id||tw.id_str));
+  renderPreview(); refreshDeleteButton();
+}
+</script>
+</body>
+</html>

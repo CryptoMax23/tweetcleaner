@@ -1,0 +1,11 @@
+name = "tweetcleaner"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "162c904f66ae447f970cd35f92952880"
